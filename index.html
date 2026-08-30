@@ -306,28 +306,21 @@
       <div class="w-status" id="act-status">Loading…</div>
     </div>
 
+    <!-- Period selector -->
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:#8ca0bc;">Period</div>
+      <select id="drill-period-select" class="w-player-select" onchange="onPeriodChange()">
+        <option value="day">Today</option>
+        <option value="7" selected>Past 7 days</option>
+        <option value="30">Past 30 days</option>
+        <option value="all">All time</option>
+      </select>
+    </div>
     <!-- Day summary cards -->
     <div class="metrics-row" id="act-day-cards" style="margin-bottom:24px"></div>
 
     <!-- Drill pie charts -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-      <div class="section-label" style="margin-bottom:0">Practice structure</div>
-      <select id="drill-period-select" class="w-player-select" onchange="renderDrillPies()">
-        <option value="7">Past 7 days</option>
-        <option value="30">Past 30 days</option>
-        <option value="all">All time</option>
-        <option value="day">Selected day</option>
-      </select>
-    </div>
-    <div class="pie-grid" style="margin-bottom:28px;grid-template-columns:1fr 1fr;">
-      <div class="pie-card">
-        <div class="pie-card-title" id="drill-type-title">Drill type × time</div>
-        <div class="pie-wrap"><canvas id="drill-type-chart"></canvas></div>
-      </div>
-      <div class="pie-card">
-        <div class="pie-card-title" id="drill-size-title">Drill size × time</div>
-        <div class="pie-wrap"><canvas id="drill-size-chart"></canvas></div>
-      </div>
+    
     </div>
 
     <!-- Day table -->
@@ -1186,6 +1179,75 @@ function buildDrillPies(tKey) {
   renderDrillPies();
 }
 
+function onPeriodChange() {
+  // Re-render cards, table, and pies based on selected period
+  var tKey = window._drillCurrentDayKey || '';
+  updateActivitySummary(tKey);
+  renderDrillPies();
+}
+
+function getFilteredActivityRows() {
+  var period = (document.getElementById('drill-period-select') || {value:'7'}).value || '7';
+  var tKey = window._drillCurrentDayKey || '';
+  var now = new Date();
+  if(period === 'day') {
+    return activityRows.filter(function(r){ return normDateStr((r['Date']||'').trim()) === tKey; });
+  } else if(period === '7') {
+    var c7 = new Date(now); c7.setDate(now.getDate()-6);
+    return activityRows.filter(function(r){ var d=parseDateStr((r['Date']||'').trim()); return !isNaN(d)&&d>=c7&&d<=now; });
+  } else if(period === '30') {
+    var c30 = new Date(now); c30.setDate(now.getDate()-29);
+    return activityRows.filter(function(r){ var d=parseDateStr((r['Date']||'').trim()); return !isNaN(d)&&d>=c30&&d<=now; });
+  } else {
+    return activityRows.slice();
+  }
+}
+
+function getPeriodLabel() {
+  var period = (document.getElementById('drill-period-select') || {value:'7'}).value || '7';
+  return period==='day'?'Today':period==='7'?'Past 7 days':period==='30'?'Past 30 days':'All time';
+}
+
+function updateActivitySummary(tKey) {
+  var rows = getFilteredActivityRows();
+  var period = (document.getElementById('drill-period-select') || {value:'7'}).value || '7';
+  var label = getPeriodLabel();
+
+  // Group by player, then compute averages
+  var byPlayer = {};
+  rows.forEach(function(r){
+    var name = r['Athlete']||r['athlete']||''; if(!name) return;
+    if(!byPlayer[name]) byPlayer[name]={min:0,pc:0};
+    byPlayer[name].min += (parseInt(r['Duration (min)'])||0);
+    byPlayer[name].pc  += (parseInt(r['PC'])||0);
+  });
+  var pNames = Object.keys(byPlayer);
+  var playerCount = pNames.length;
+  var sumMin = pNames.reduce(function(s,p){return s+byPlayer[p].min;},0);
+  var sumPC  = pNames.reduce(function(s,p){return s+byPlayer[p].pc; },0);
+
+  // For multi-day periods, average per player per day
+  var uniqueDates = {};
+  rows.forEach(function(r){ var dk=normDateStr((r['Date']||'').trim()); if(dk) uniqueDates[dk]=true; });
+  var dayCount = Object.keys(uniqueDates).length || 1;
+
+  var avgMin, avgPC;
+  if(period === 'day') {
+    avgMin = playerCount ? Math.round(sumMin/playerCount) : 0;
+    avgPC  = playerCount ? Math.round(sumPC/playerCount)  : 0;
+  } else {
+    // Average per player per day
+    avgMin = playerCount ? Math.round(sumMin/playerCount/dayCount) : 0;
+    avgPC  = playerCount ? Math.round(sumPC/playerCount/dayCount)  : 0;
+  }
+
+  var subLabel = period==='day' ? 'team average' : 'per player per day avg';
+
+  document.getElementById('act-day-cards').innerHTML =
+    '<div class="metric"><div class="metric-label">Avg minutes / player</div><div class="metric-value">'+avgMin+'<span>min</span></div><div class="metric-sub">'+subLabel+'</div></div>'
+    +'<div class="metric"><div class="metric-label">Avg load (PS) / player</div><div class="metric-value">'+avgPC.toLocaleString()+'</div><div class="metric-sub">'+subLabel+'</div></div>';
+}
+
 function renderDrillPies() {
   if(!drillRows || !drillRows.length) return;
   var period = (document.getElementById('drill-period-select') || {value:'7'}).value || '7';
@@ -1194,19 +1256,13 @@ function renderDrillPies() {
   var filtered;
   var now = new Date();
   if(period === 'day') {
-    filtered = drillRows.filter(function(r){ return normDateStr(r['Date']||'') === tKey; });
+    filtered = drillRows.filter(function(r){ return normDateStr((r['Date']||'').trim()) === tKey; });
   } else if(period === '7') {
-    var cutoff = new Date(now); cutoff.setDate(now.getDate()-6);
-    filtered = drillRows.filter(function(r){
-      var d = parseDateStr((r['Date']||'').trim());
-      return !isNaN(d) && d >= cutoff && d <= now;
-    });
+    var cutoff7 = new Date(now); cutoff7.setDate(now.getDate()-6);
+    filtered = drillRows.filter(function(r){ var d=parseDateStr((r['Date']||'').trim()); return !isNaN(d)&&d>=cutoff7&&d<=now; });
   } else if(period === '30') {
     var cutoff30 = new Date(now); cutoff30.setDate(now.getDate()-29);
-    filtered = drillRows.filter(function(r){
-      var d = parseDateStr((r['Date']||'').trim());
-      return !isNaN(d) && d >= cutoff30 && d <= now;
-    });
+    filtered = drillRows.filter(function(r){ var d=parseDateStr((r['Date']||'').trim()); return !isNaN(d)&&d>=cutoff30&&d<=now; });
   } else {
     filtered = drillRows.slice();
   }
@@ -1220,7 +1276,7 @@ function renderDrillPies() {
     if(sz) bySize[sz] = (bySize[sz]  || 0) + min;
   });
 
-  var label = period==='day'?'Selected day':period==='7'?'Past 7 days':period==='30'?'Past 30 days':'All time';
+  var label = getPeriodLabel();
   var t1 = document.getElementById('drill-type-title');
   var t2 = document.getElementById('drill-size-title');
   if(t1) t1.textContent = 'Drill type × time — ' + label;
@@ -1425,13 +1481,8 @@ function renderActivity(){
   var playerCount = pNames.length;
   var sumMin = pNames.reduce(function(s,p){return s+byPlayerSum[p].min;},0);
   var sumPC  = pNames.reduce(function(s,p){return s+byPlayerSum[p].pc; },0);
-  var avgMin = playerCount ? Math.round(sumMin/playerCount) : 0;
-  var avgPC  = playerCount ? Math.round(sumPC/playerCount)  : 0;
-  document.getElementById('act-day-cards').innerHTML =
-    '<div class="metric"><div class="metric-label">Players training</div><div class="metric-value">'+playerCount+'</div><div class="metric-sub">'+dStr.split(',')[0]+'</div></div>'
-    +'<div class="metric"><div class="metric-label">Avg minutes / player</div><div class="metric-value">'+avgMin+'<span>min</span></div><div class="metric-sub">team average</div></div>'
-    +'<div class="metric"><div class="metric-label">Avg load (PS) / player</div><div class="metric-value">'+avgPC.toLocaleString()+'</div><div class="metric-sub">team average</div></div>'
-;
+  // Summary cards handled by updateActivitySummary
+  updateActivitySummary(tKey);
 
   // ── Day table ──
   var thead = '<tr>'
