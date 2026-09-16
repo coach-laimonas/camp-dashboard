@@ -225,6 +225,10 @@
   .area-c { background:#fff7e0; border-radius:8px; padding:10px 12px; font-size:12px; color:#cc6600; font-weight:500; line-height:1.4; }
   .complaint-c { background:#fff0f0; border:1px solid rgba(192,48,10,0.2); border-radius:8px; padding:10px 14px; font-size:13px; color:#c0300a; margin-bottom:1.25rem; }
 
+
+  /* Page tab visibility */
+  #page-activity, #page-workouts, #page-wellness { display: none; }
+  #page-activity.page-active, #page-workouts.page-active, #page-wellness.page-active { display: block; }
   /* AVAILABILITY */
   .avail-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
   .avail-sum-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
@@ -319,10 +323,6 @@
     <!-- Day summary cards -->
     <div class="metrics-row" id="act-day-cards" style="margin-bottom:24px"></div>
 
-    <!-- Drill pie charts -->
-    
-    </div>
-
     <!-- Day table -->
     <div class="section-label">Player breakdown — selected day</div>
     <div class="table-wrap" style="margin-bottom:32px;overflow-x:auto">
@@ -333,7 +333,14 @@
     </div>
 
     <!-- 7-day charts -->
-    <div class="section-label">Past 7 days — team overview</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div class="section-label" style="margin-bottom:0">Team overview</div>
+      <select id="overview-period-select" class="w-player-select" onchange="renderActivity()">
+        <option value="7" selected>Past 7 days</option>
+        <option value="14">Past 14 days</option>
+        <option value="30">Past 30 days</option>
+      </select>
+    </div>
     <div class="charts-row" style="margin-bottom:24px">
       <div class="chart-card">
         <div class="chart-card-title">Avg load per player (PS) — stacked by activity</div>
@@ -369,7 +376,7 @@
           <strong>Daily load</strong> = Avg team PS that day<br>
           <strong>Monotony</strong> = Mean(7d loads) ÷ SD(7d loads)<br>
           <strong>Strain</strong> = Weekly load × Monotony<br>
-          <span style="color:#8ca0bc">Rolling 7-day window, updated daily</span>
+          <span style="color:#8ca0bc">Rolling 7-day window · minimum 7 days required · days off counted as zero load</span>
         </div>
       </div>
     </div>
@@ -391,7 +398,7 @@
 
     <!-- Game Analysis -->
     <div class="section-label">Game analysis</div>
-<div id="game-log-card" style="display:none"></div>
+<div id="game-log-card"></div>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
       <select class="w-player-select" id="game-player-select" onchange="buildGameTrend()">
         <option value="">Select player…</option>
@@ -427,7 +434,7 @@
   </div>
 
   <!-- WELLNESS PAGE -->
-  <div id="page-wellness" style="display:none">
+  <div id="page-wellness">
 
     <!-- Wellness -->
     <div class="w-section-title" style="border-top:none;margin-top:0;padding-top:0;">Player Wellness</div>
@@ -437,10 +444,14 @@
       <button class="day-nav-btn" id="next-day-btn" onclick="shiftDay(1)" disabled>Next day →</button>
     </div>
     <div class="w-status" id="wellness-status">Loading…</div>
-    <div class="pie-grid">
+    <div class="pie-grid" style="grid-template-columns:repeat(3,1fr)">
       <div class="pie-card"><div class="pie-card-title">Fatigue</div><div class="pie-wrap"><canvas id="pie-fatigue"></canvas></div></div>
       <div class="pie-card"><div class="pie-card-title">Muscle Soreness</div><div class="pie-wrap"><canvas id="pie-soreness"></canvas></div></div>
       <div class="pie-card"><div class="pie-card-title">Sleep Quality</div><div class="pie-wrap"><canvas id="pie-sleep"></canvas></div></div>
+    </div>
+    <div class="pie-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:24px;">
+      <div class="pie-card"><div class="pie-card-title">Stress Level</div><div class="pie-wrap"><canvas id="pie-stress"></canvas></div></div>
+      <div class="pie-card"><div class="pie-card-title">Mood</div><div class="pie-wrap"><canvas id="pie-mood"></canvas></div></div>
     </div>
     <div class="drilldown" id="drilldown">
       <div class="drilldown-title"><span class="drilldown-dot" id="drilldown-dot"></span><span id="drilldown-text"></span></div>
@@ -564,13 +575,16 @@ var moodChartObj = null;
 // ── PAGE TABS ────────────────────────────────────────────────────────────────
 function showPage(page) {
   var labels = {activity:'Player Activity & Practice Load', wellness:'Team Wellness', workouts:'Individual Practices'};
+  ['page-activity','page-workouts','page-wellness'].forEach(function(id){
+    var el = document.getElementById(id);
+    if(el) el.classList.remove('page-active');
+  });
+  var target = document.getElementById('page-' + page);
+  if(target) target.classList.add('page-active');
   document.querySelectorAll('.page-tab').forEach(function(t,i) {
     var pages = ['activity','wellness','workouts'];
     t.classList.toggle('active', pages[i] === page);
   });
-  document.getElementById('page-activity').style.display  = page === 'activity'  ? '' : 'none';
-  document.getElementById('page-workouts').style.display = page === 'workouts' ? '' : 'none';
-  document.getElementById('page-wellness').style.display  = page === 'wellness'  ? '' : 'none';
   document.getElementById('header-sub').textContent = labels[page] || '';
 }
 
@@ -713,6 +727,23 @@ function extractScore(val) {
 
 function dateKey(d) { return (d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear(); }
 
+function getLastWellnessOffset() {
+  // Find the most recent date with wellness data
+  var dates = {};
+  wellnessRows.forEach(function(r){
+    var d = (r['Timestamp']||'').split(' ')[0];
+    if(d) dates[d] = true;
+  });
+  var sorted = Object.keys(dates).sort(function(a,b){return new Date(b)-new Date(a);});
+  if(!sorted.length) return 0;
+  var latest = new Date(sorted[0]);
+  var today  = new Date();
+  today.setHours(0,0,0,0);
+  latest.setHours(0,0,0,0);
+  var diff = Math.round((today - latest) / 86400000);
+  return -diff; // negative offset = days before today
+}
+
 function shiftDay(delta) {
   dayOffset += delta;
   if (dayOffset > 0) dayOffset = 0;
@@ -752,6 +783,8 @@ function renderWellness() {
   buildPie('pie-fatigue',  'FATIGUE',         'Fatigue',         dayRows);
   buildPie('pie-soreness', 'MUSCLE SORENESS', 'Muscle Soreness', dayRows);
   buildPie('pie-sleep',    'SLEEP QUALITY',   'Sleep Quality',   dayRows);
+  buildPie('pie-stress',   'STRESS LEVEL',    'Stress Level',    dayRows);
+  buildPie('pie-mood',     'MOOD',            'Mood',            dayRows);
   buildMoodChart();
 
   var tbody = document.getElementById('comment-body');
@@ -1155,6 +1188,8 @@ var DRILL_COLORS = [
 ];
 
 function buildDrillPie(canvasId, data, existing) {
+  var canvas = document.getElementById(canvasId);
+  if(!canvas) return null;
   if(existing) existing.destroy();
   if(!data || !Object.keys(data).length) return null;
   var labels = Object.keys(data);
@@ -1174,9 +1209,11 @@ function buildDrillPie(canvasId, data, existing) {
 }
 
 function buildDrillPies(tKey) {
-  // Store current day key for "selected day" option
   window._drillCurrentDayKey = tKey;
-  renderDrillPies();
+  // Only render if pie canvases exist in DOM
+  if(document.getElementById('drill-type-chart') || document.getElementById('drill-size-chart')) {
+    renderDrillPies();
+  }
 }
 
 function onPeriodChange() {
@@ -1214,34 +1251,45 @@ function updateActivitySummary(tKey) {
   var label = getPeriodLabel();
 
   // Group by player, then compute averages
-  var byPlayer = {};
+  // Group by date → player, only include players who did basketball practice
+  // Their totals include ALL activities they did that day
+  var dayPlayerData = {}; // dayPlayerData[dk][name] = {min, pc, didBasketball}
   rows.forEach(function(r){
     var name = r['Athlete']||r['athlete']||''; if(!name) return;
-    if(!byPlayer[name]) byPlayer[name]={min:0,pc:0};
-    byPlayer[name].min += (parseInt(r['Duration (min)'])||0);
-    byPlayer[name].pc  += (parseInt(r['PC'])||0);
+    var dk   = normDateStr((r['Date']||'').trim()); if(!dk) return;
+    var pc   = parseInt(r['PC'])||0;
+    var min  = parseInt(r['Duration (min)'])||0;
+    var type = (r['Training Type']||'').toLowerCase();
+    if(!dayPlayerData[dk]) dayPlayerData[dk]={};
+    if(!dayPlayerData[dk][name]) dayPlayerData[dk][name]={min:0,pc:0,didBasketball:false};
+    dayPlayerData[dk][name].min += min;
+    dayPlayerData[dk][name].pc  += pc;
+    if(type.indexOf('basketball')!==-1||type.indexOf('practice')!==-1||type.indexOf('skill')!==-1){
+      dayPlayerData[dk][name].didBasketball = true;
+    }
   });
-  var pNames = Object.keys(byPlayer);
-  var playerCount = pNames.length;
-  var sumMin = pNames.reduce(function(s,p){return s+byPlayer[p].min;},0);
-  var sumPC  = pNames.reduce(function(s,p){return s+byPlayer[p].pc; },0);
 
-  // For multi-day periods, average per player per day
-  var uniqueDates = {};
-  rows.forEach(function(r){ var dk=normDateStr((r['Date']||'').trim()); if(dk) uniqueDates[dk]=true; });
-  var dayCount = Object.keys(uniqueDates).length || 1;
+  // For each day, average only basketball participants; sum their full load
+  var sumMin = 0, sumPC = 0, totalTrainingDays = 0;
+  var playerSet = {};
+  Object.keys(dayPlayerData).forEach(function(dk){
+    var active = Object.keys(dayPlayerData[dk]).filter(function(p){
+      return dayPlayerData[dk][p].didBasketball && dayPlayerData[dk][p].pc > 0;
+    });
+    if(!active.length) return;
+    active.forEach(function(p){
+      sumMin += dayPlayerData[dk][p].min;
+      sumPC  += dayPlayerData[dk][p].pc;
+      playerSet[p] = true;
+      totalTrainingDays++;
+    });
+  });
 
-  var avgMin, avgPC;
-  if(period === 'day') {
-    avgMin = playerCount ? Math.round(sumMin/playerCount) : 0;
-    avgPC  = playerCount ? Math.round(sumPC/playerCount)  : 0;
-  } else {
-    // Average per player per day
-    avgMin = playerCount ? Math.round(sumMin/playerCount/dayCount) : 0;
-    avgPC  = playerCount ? Math.round(sumPC/playerCount/dayCount)  : 0;
-  }
+  var playerCount = Object.keys(playerSet).length;
+  var avgMin = totalTrainingDays ? Math.round(sumMin/totalTrainingDays) : 0;
+  var avgPC  = totalTrainingDays ? Math.round(sumPC/totalTrainingDays)  : 0;
 
-  var subLabel = period==='day' ? 'team average' : 'per player per day avg';
+  var subLabel = period==='day' ? 'basketball players avg' : 'avg per basketball player per day';
 
   document.getElementById('act-day-cards').innerHTML =
     '<div class="metric"><div class="metric-label">Avg minutes / player</div><div class="metric-value">'+avgMin+'<span>min</span></div><div class="metric-sub">'+subLabel+'</div></div>'
@@ -1249,6 +1297,7 @@ function updateActivitySummary(tKey) {
 }
 
 function renderDrillPies() {
+  if(!document.getElementById('drill-type-chart') && !document.getElementById('drill-size-chart')) return;
   if(!drillRows || !drillRows.length) return;
   var period = (document.getElementById('drill-period-select') || {value:'7'}).value || '7';
   var tKey = window._drillCurrentDayKey || '';
@@ -1288,44 +1337,50 @@ function renderDrillPies() {
 
 
 function buildMonotonyChart() {
-  // Collect all unique dates from activity data, sorted
-  var dateMap = {};
-  activityRows.forEach(function(r){
-    var d = parseDateStr(r['Date']||'');
-    if(!isNaN(d)) {
-      var k = actDateKey(d);
-      if(!dateMap[k]) dateMap[k] = { sum:0, n:0, ts:d.getTime() };
-      dateMap[k].sum += (parseInt(r['PC'])||0);
-      dateMap[k].count = (dateMap[k].count||0) + 1;
-    }
-  });
-
-  // Compute avg team PC per day
-  // Group by player per day first to get true team average
+  // Group by date → player → {pc, didBasketball}
+  // Only basketball practice participants count; their total includes all activities
   var dayPlayerMap = {};
   activityRows.forEach(function(r){
     var d = parseDateStr(r['Date']||'');
     if(isNaN(d)) return;
-    var k = actDateKey(d);
-    var name = r['Athlete']||'';
-    if(!name) return;
-    if(!dayPlayerMap[k]) dayPlayerMap[k] = {};
-    if(!dayPlayerMap[k][name]) dayPlayerMap[k][name] = 0;
-    dayPlayerMap[k][name] += (parseInt(r['PC'])||0);
+    var k    = actDateKey(d);
+    var name = r['Athlete']||''; if(!name) return;
+    var pc   = parseInt(r['PC'])||0;
+    var type = (r['Training Type']||'').toLowerCase();
+    if(!dayPlayerMap[k]) dayPlayerMap[k]={};
+    if(!dayPlayerMap[k][name]) dayPlayerMap[k][name]={pc:0,didBasketball:false};
+    dayPlayerMap[k][name].pc += pc;
+    if(type.indexOf('basketball')!==-1||type.indexOf('practice')!==-1||type.indexOf('skill')!==-1){
+      dayPlayerMap[k][name].didBasketball = true;
+    }
   });
 
-  // Avg PS per day = mean across players
+  // Avg PS per day = mean across basketball participants only
   var dayAvgPC = {};
   Object.keys(dayPlayerMap).forEach(function(k){
-    var players = Object.keys(dayPlayerMap[k]);
-    var total = players.reduce(function(s,p){ return s + dayPlayerMap[k][p]; }, 0);
-    dayAvgPC[k] = players.length ? total / players.length : 0;
+    var active = Object.keys(dayPlayerMap[k]).filter(function(p){
+      return dayPlayerMap[k][p].didBasketball && dayPlayerMap[k][p].pc > 0;
+    });
+    if(!active.length) return;
+    var total = active.reduce(function(s,p){ return s + dayPlayerMap[k][p].pc; }, 0);
+    dayAvgPC[k] = total / active.length;
   });
 
-  // Sort dates
-  var sortedKeys = Object.keys(dayAvgPC).sort(function(a,b){
-    return new Date(a) - new Date(b);
-  });
+  // Fill calendar gaps with 0 (days off) between first and last training day
+  var trainingDates = Object.keys(dayAvgPC).sort(function(a,b){ return new Date(a)-new Date(b); });
+  if(trainingDates.length < 2) {
+    if(monotonyChart) { monotonyChart.destroy(); monotonyChart = null; }
+    return;
+  }
+  var firstDate = new Date(trainingDates[0]);
+  var lastDate  = new Date(trainingDates[trainingDates.length-1]);
+  var allDayKeys = [];
+  for(var d = new Date(firstDate); d <= lastDate; d.setDate(d.getDate()+1)) {
+    var k = actDateKey(new Date(d));
+    if(!(k in dayAvgPC)) dayAvgPC[k] = 0; // day off = zero load
+    allDayKeys.push(k);
+  }
+  var sortedKeys = allDayKeys;
 
   if(sortedKeys.length < 2) {
     if(monotonyChart) { monotonyChart.destroy(); monotonyChart = null; }
@@ -1344,7 +1399,8 @@ function buildMonotonyChart() {
     var variance = loads.reduce(function(s,v){return s+Math.pow(v-mean,2);},0) / loads.length;
     var sd = Math.sqrt(variance);
 
-    var monotony = sd > 0 ? parseFloat((mean / sd).toFixed(2)) : null;
+    // Require full 7-day window and sd > 0 (Foster formula standard)
+    var monotony = (loads.length === 7 && sd > 0) ? parseFloat((mean / sd).toFixed(2)) : null;
     var weeklyLoad = loads.reduce(function(s,v){return s+v;},0);
     var strain = monotony !== null ? parseFloat((weeklyLoad * monotony).toFixed(0)) : null;
 
@@ -1536,10 +1592,11 @@ function renderActivity(){
     }).join('');
   }
 
-  // ── 7-day data ──
+  // ── Bar chart period (7/14/30 days) ──
+  var overviewDays = parseInt((document.getElementById('overview-period-select')||{value:'7'}).value)||7;
   var today = new Date();
   var days7 = [];
-  for(var i=6;i>=0;i--){
+  for(var i=overviewDays-1;i>=0;i--){
     var d=new Date(today);
     d.setDate(today.getDate()-i);
     days7.push(d);
@@ -1669,18 +1726,117 @@ function renderActivity(){
     });
   });
 
-  // Min chart — one bar per day, avg minutes, colored by main activity type
+  // Min chart — green normally, red if above 28d chronic average
+  // Compute chronic avg minutes (all available data up to 28 days)
+  // Compute chronic avg minutes per player per day — only active players with PC>0
+  var chronicMinAvg = (function(){
+    var dayData = {};
+    activityRows.forEach(function(r){
+      var dk=normDateStr((r['Date']||'').trim()); if(!dk) return;
+      var name=r['Athlete']||''; if(!name) return;
+      var pc=parseInt(r['PC'])||0;
+      var min=parseInt(r['Duration (min)'])||0;
+      if(!dayData[dk]) dayData[dk]={};
+      if(!dayData[dk][name]) dayData[dk][name]={min:0,pc:0};
+      dayData[dk][name].min+=min;
+      dayData[dk][name].pc+=pc;
+    });
+    var dayAvgs=[];
+    Object.keys(dayData).forEach(function(dk){
+      // Only players with load that day
+      var active=Object.keys(dayData[dk]).filter(function(p){return dayData[dk][p].pc>0;});
+      if(!active.length) return;
+      var tot=active.reduce(function(s,p){return s+dayData[dk][p].min;},0);
+      dayAvgs.push(tot/active.length);
+    });
+    return dayAvgs.length ? dayAvgs.reduce(function(s,v){return s+v;},0)/dayAvgs.length : 0;
+  })();
+
   var minDatasets = [{
     label:'Avg minutes',
     data: dayChartData.map(function(dd){ return dd.avgMin; }),
     backgroundColor: dayChartData.map(function(dd){
-      var c = getActColors(dd.mainType||'');
-      return dd.isSelected ? '#e8630a' : c.chart;
+      if(!dd.avgMin) return 'rgba(67,160,71,0.3)';
+      return dd.avgMin > chronicMinAvg ? '#e53935' : '#43a047';
     }),
     borderRadius: 4
   }];
 
   var showLegend = typesForChart.length > 1;
+
+  // Chronic avg: only players who did Basketball Practice that day
+  // Their total includes ALL activities they did (not just basketball)
+  var chronicCalc = (function(){
+    // Group by date → player → {totalPC, totalMin, didBasketball}
+    var dayData = {};
+    activityRows.forEach(function(r){
+      var dk   = normDateStr((r['Date']||'').trim()); if(!dk) return;
+      var name = r['Athlete']||''; if(!name) return;
+      var pc   = parseInt(r['PC'])||0;
+      var min  = parseInt(r['Duration (min)'])||0;
+      var type = (r['Training Type']||'').toLowerCase();
+      if(!dayData[dk]) dayData[dk]={};
+      if(!dayData[dk][name]) dayData[dk][name]={pc:0,min:0,didBasketball:false};
+      dayData[dk][name].pc  += pc;
+      dayData[dk][name].min += min;
+      if(type.indexOf('basketball')!==-1 || type.indexOf('practice')!==-1 || type.indexOf('skill')!==-1) {
+        dayData[dk][name].didBasketball = true;
+      }
+    });
+    var dayPSAvgs=[], dayMinAvgs=[];
+    Object.keys(dayData).forEach(function(dk){
+      // Only players who participated in basketball practice
+      var active = Object.keys(dayData[dk]).filter(function(p){
+        return dayData[dk][p].didBasketball && dayData[dk][p].pc > 0;
+      });
+      if(!active.length) return;
+      var totPS  = active.reduce(function(s,p){return s+dayData[dk][p].pc; },0);
+      var totMin = active.reduce(function(s,p){return s+dayData[dk][p].min;},0);
+      dayPSAvgs.push(totPS/active.length);
+      dayMinAvgs.push(totMin/active.length);
+    });
+    return {
+      ps:  dayPSAvgs.length  ? dayPSAvgs.reduce(function(s,v){return s+v;},0)/dayPSAvgs.length   : 0,
+      min: dayMinAvgs.length ? dayMinAvgs.reduce(function(s,v){return s+v;},0)/dayMinAvgs.length  : 0
+    };
+  })();
+  var chronicPSAvg  = chronicCalc.ps;
+  var chronicMinAvg = chronicCalc.min;
+
+  var minDatasets = [{
+    label:'Avg minutes',
+    data: dayChartData.map(function(dd){ return dd.avgMin; }),
+    backgroundColor: dayChartData.map(function(dd){
+      if(!dd.avgMin) return 'rgba(67,160,71,0.3)';
+      return dd.avgMin > chronicMinAvg ? '#e53935' : '#43a047';
+    }),
+    borderRadius: 4
+  }];
+
+  var showLegend = typesForChart.length > 1;
+
+  // Compute chronic avg PS per player per day
+  // Method: for each training day, avg PS of players who actually trained (PC>0), then avg those daily values
+  var chronicPSAvg = (function(){
+    var dayPS = {};
+    activityRows.forEach(function(r){
+      var dk=normDateStr((r['Date']||'').trim()); if(!dk) return;
+      var name=r['Athlete']||''; if(!name) return;
+      var pc=parseInt(r['PC'])||0;
+      if(!dayPS[dk]) dayPS[dk]={};
+      if(!dayPS[dk][name]) dayPS[dk][name]=0;
+      dayPS[dk][name]+=pc;
+    });
+    var dayAvgs=[];
+    Object.keys(dayPS).forEach(function(dk){
+      // Only count players who actually had load that day
+      var activePlayers=Object.keys(dayPS[dk]).filter(function(p){return dayPS[dk][p]>0;});
+      if(!activePlayers.length) return;
+      var tot=activePlayers.reduce(function(s,p){return s+dayPS[dk][p];},0);
+      dayAvgs.push(tot/activePlayers.length);
+    });
+    return dayAvgs.length ? dayAvgs.reduce(function(s,v){return s+v;},0)/dayAvgs.length : 0;
+  })();
 
   if(actLoadChart) actLoadChart.destroy();
   actLoadChart = new Chart(document.getElementById('act-load-chart'),{
@@ -1695,7 +1851,24 @@ function renderActivity(){
       scales:{
         x:{stacked:true,ticks:{color:tickC,font:{size:11}},grid:{color:gridC},border:{display:false}},
         y:{stacked:true,ticks:{color:tickC,font:{size:11}},grid:{color:gridC},border:{display:false}}
-      }
+      },
+      animation:{onComplete:function(anim){
+        if(!chronicPSAvg) return;
+        var chart=anim.chart, ctx2=chart.ctx, yAxis=chart.scales.y;
+        var y=yAxis.getPixelForValue(chronicPSAvg);
+        ctx2.save();
+        ctx2.strokeStyle='rgba(229,57,53,0.5)';
+        ctx2.lineWidth=1.5;
+        ctx2.setLineDash([5,4]);
+        ctx2.beginPath();
+        ctx2.moveTo(chart.chartArea.left,y);
+        ctx2.lineTo(chart.chartArea.right,y);
+        ctx2.stroke();
+        ctx2.fillStyle='rgba(229,57,53,0.7)';
+        ctx2.font='10px monospace';
+        ctx2.fillText('chronic avg',chart.chartArea.right-72,y-4);
+        ctx2.restore();
+      }}
     }
   });
 
@@ -1707,12 +1880,32 @@ function renderActivity(){
       responsive:true,maintainAspectRatio:false,
       plugins:{
         legend:{display:false},
-        tooltip:{callbacks:{label:function(ctx){return ' Avg: '+ctx.raw+' min';}}}
+        tooltip:{callbacks:{label:function(ctx){
+          var aboveBelow = chronicMinAvg && ctx.raw > chronicMinAvg ? ' ▲ above chronic avg' : '';
+          return ' Avg: '+ctx.raw+' min'+aboveBelow;
+        }}}
       },
       scales:{
         x:{ticks:{color:tickC,font:{size:11}},grid:{color:gridC},border:{display:false}},
         y:{ticks:{color:tickC,font:{size:11}},grid:{color:gridC},border:{display:false}}
-      }
+      },
+      animation:{onComplete:function(anim){
+        if(!chronicMinAvg) return;
+        var chart=anim.chart, ctx2=chart.ctx, yAxis=chart.scales.y;
+        var y=yAxis.getPixelForValue(chronicMinAvg);
+        ctx2.save();
+        ctx2.strokeStyle='rgba(229,57,53,0.5)';
+        ctx2.lineWidth=1.5;
+        ctx2.setLineDash([5,4]);
+        ctx2.beginPath();
+        ctx2.moveTo(chart.chartArea.left,y);
+        ctx2.lineTo(chart.chartArea.right,y);
+        ctx2.stroke();
+        ctx2.fillStyle='rgba(229,57,53,0.7)';
+        ctx2.font='10px monospace';
+        ctx2.fillText('chronic avg',chart.chartArea.right-72,y-4);
+        ctx2.restore();
+      }}
     }
   });
 
