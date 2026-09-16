@@ -698,8 +698,9 @@ function loadWellness() {
   return fetchCSV(WELLNESS_CSV)
     .then(function(text){
       wellnessRows = parseWellnessCSV(text);
+      wellnessRows = parseWellnessCSV(text);
+      dayOffset = getLastWellnessOffset();
       renderWellness();
-      try{buildAvailTrend();}catch(e2){console.error("AvailTrend error:",e2);}
     })
     .catch(function(e){
       document.getElementById('wellness-status').textContent = '✗ ' + e.message;
