@@ -1610,13 +1610,28 @@ function renderActivity(){
     dayLoadMap[k]=0; dayMinMap[k]=0;
     dayLabelMap[k]=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
   });
+  // For color coding - track per player to apply basketball filter
+  var dayPlayerLoad={}, dayPlayerMin={};
   activityRows.forEach(function(r){
     var d=parseDateStr(r['Date']||'');
     var k=actDateKey(d);
-    if(k in dayLoadMap){
-      dayLoadMap[k]+=(parseInt(r['PC'])||0);
-      dayMinMap[k]+=(parseInt(r['Duration (min)'])||0);
-    }
+    if(!(k in dayLoadMap)) return;
+    var name=r['Athlete']||''; if(!name) return;
+    var pc=parseInt(r['PC'])||0;
+    var min=parseInt(r['Duration (min)'])||0;
+    var t=(r['Training Type']||'').toLowerCase();
+    var isBasketball=t.indexOf('basketball')!==-1||t.indexOf('practice')!==-1||t.indexOf('skill')!==-1;
+    if(!dayPlayerLoad[k]) dayPlayerLoad[k]={};
+    if(!dayPlayerLoad[k][name]) dayPlayerLoad[k][name]={pc:0,min:0,didBasketball:false};
+    dayPlayerLoad[k][name].pc+=pc;
+    dayPlayerLoad[k][name].min+=min;
+    if(isBasketball) dayPlayerLoad[k][name].didBasketball=true;
+  });
+  Object.keys(dayPlayerLoad).forEach(function(k){
+    var active=Object.keys(dayPlayerLoad[k]).filter(function(p){return dayPlayerLoad[k][p].didBasketball&&dayPlayerLoad[k][p].pc>0;});
+    if(!active.length) return;
+    dayLoadMap[k]=Math.round(active.reduce(function(s,p){return s+dayPlayerLoad[k][p].pc;},0)/active.length);
+    dayMinMap[k]=Math.round(active.reduce(function(s,p){return s+dayPlayerLoad[k][p].min;},0)/active.length);
   });
   var chartLabels = days7.map(function(d){return dayLabelMap[actDateKey(d)];});
   var loadData    = days7.map(function(d){return dayLoadMap[actDateKey(d)];});
@@ -1637,18 +1652,26 @@ function renderActivity(){
     var byP={};
     dayR.forEach(function(r){
       var name=r['Athlete']||''; if(!name) return;
-      if(!byP[name]){byP[name]={pc:0,min:0,byType:{}};}
-      byP[name].pc  +=(parseInt(r['PC'])||0);
-      byP[name].min +=(parseInt(r['Duration (min)'])||0);
+      var pc=parseInt(r['PC'])||0;
+      var min=parseInt(r['Duration (min)'])||0;
       var t=(r['Training Type']||'').trim();
+      if(!byP[name]){byP[name]={pc:0,min:0,byType:{},didBasketball:false};}
+      byP[name].pc  +=pc;
+      byP[name].min +=min;
       if(t){
         if(!byP[name].byType[t]) byP[name].byType[t]=0;
-        byP[name].byType[t]+=(parseInt(r['PC'])||0);
+        byP[name].byType[t]+=pc;
+      }
+      if(t.toLowerCase().indexOf('basketball')!==-1||t.toLowerCase().indexOf('practice')!==-1||t.toLowerCase().indexOf('skill')!==-1){
+        byP[name].didBasketball=true;
       }
     });
-    var pNames=Object.keys(byP); var n=pNames.length;
-    var avgPC  = n?Math.round(pNames.reduce(function(s,p){return s+byP[p].pc; },0)/n):0;
-    var avgMin = n?Math.round(pNames.reduce(function(s,p){return s+byP[p].min;},0)/n):0;
+    // Only basketball practice players for avg
+    var allNames=Object.keys(byP);
+    var pNames=allNames.filter(function(p){return byP[p].didBasketball&&byP[p].pc>0;});
+    var n=pNames.length||allNames.length; // fallback to all if no basketball
+    var avgPC  = pNames.length?Math.round(pNames.reduce(function(s,p){return s+byP[p].pc; },0)/pNames.length):0;
+    var avgMin = pNames.length?Math.round(pNames.reduce(function(s,p){return s+byP[p].min;},0)/pNames.length):0;
     // Secondary types with 7+ players
     var typePlayerCount={};
     pNames.forEach(function(p){Object.keys(byP[p].byType).forEach(function(t){typePlayerCount[t]=(typePlayerCount[t]||0)+1;});});
@@ -1754,14 +1777,31 @@ function renderActivity(){
     return dayAvgs.length ? dayAvgs.reduce(function(s,v){return s+v;},0)/dayAvgs.length : 0;
   })();
 
+  // Mark days that have ANY rows (including day-off rows with 0 load)
+  var daysWithData = {};
+  activityRows.forEach(function(r){
+    var dk=normDateStr((r['Date']||'').trim());
+    if(dk) daysWithData[dk]=true;
+  });
+
   var minDatasets = [{
     label:'Avg minutes',
-    data: dayChartData.map(function(dd){ return dd.avgMin; }),
+    data: dayChartData.map(function(dd, i){
+      var dk = actDateKey(days7[i]);
+      // Day off row exists but has 0 load — show 0 explicitly
+      if(daysWithData[dk] && !dd.avgMin) return 0;
+      return dd.avgMin;
+    }),
     backgroundColor: dayChartData.map(function(dd){
-      if(!dd.avgMin) return 'rgba(67,160,71,0.3)';
+      if(!dd.avgMin) return 'rgba(200,200,200,0.4)';
       return dd.avgMin > chronicMinAvg ? '#e53935' : '#43a047';
     }),
-    borderRadius: 4
+    borderRadius: 4,
+    // Show a tiny base so day-off columns are visible
+    minBarLength: dayChartData.map(function(dd, i){
+      var dk = actDateKey(days7[i]);
+      return (daysWithData[dk] && !dd.avgMin) ? 4 : 0;
+    })
   }];
 
   var showLegend = typesForChart.length > 1;
@@ -1805,14 +1845,31 @@ function renderActivity(){
   var chronicPSAvg  = chronicCalc.ps;
   var chronicMinAvg = chronicCalc.min;
 
+  // Mark days that have ANY rows (including day-off rows with 0 load)
+  var daysWithData = {};
+  activityRows.forEach(function(r){
+    var dk=normDateStr((r['Date']||'').trim());
+    if(dk) daysWithData[dk]=true;
+  });
+
   var minDatasets = [{
     label:'Avg minutes',
-    data: dayChartData.map(function(dd){ return dd.avgMin; }),
+    data: dayChartData.map(function(dd, i){
+      var dk = actDateKey(days7[i]);
+      // Day off row exists but has 0 load — show 0 explicitly
+      if(daysWithData[dk] && !dd.avgMin) return 0;
+      return dd.avgMin;
+    }),
     backgroundColor: dayChartData.map(function(dd){
-      if(!dd.avgMin) return 'rgba(67,160,71,0.3)';
+      if(!dd.avgMin) return 'rgba(200,200,200,0.4)';
       return dd.avgMin > chronicMinAvg ? '#e53935' : '#43a047';
     }),
-    borderRadius: 4
+    borderRadius: 4,
+    // Show a tiny base so day-off columns are visible
+    minBarLength: dayChartData.map(function(dd, i){
+      var dk = actDateKey(days7[i]);
+      return (daysWithData[dk] && !dd.avgMin) ? 4 : 0;
+    })
   }];
 
   var showLegend = typesForChart.length > 1;
@@ -1839,6 +1896,21 @@ function renderActivity(){
     });
     return dayAvgs.length ? dayAvgs.reduce(function(s,v){return s+v;},0)/dayAvgs.length : 0;
   })();
+
+  // Add day-off indicator (grey bar) for days with rows but zero load
+  var dayOffLoadData = dayChartData.map(function(dd, i){
+    var dk = actDateKey(days7[i]);
+    return (daysWithData[dk] && !dd.avgPC) ? 3 : 0;
+  });
+  if(dayOffLoadData.some(function(v){return v>0;})){
+    loadDatasets.push({
+      label:'Day off',
+      data: dayOffLoadData,
+      backgroundColor:'rgba(160,160,160,0.4)',
+      borderRadius:3,
+      stack:'pc'
+    });
+  }
 
   if(actLoadChart) actLoadChart.destroy();
   actLoadChart = new Chart(document.getElementById('act-load-chart'),{
