@@ -1596,11 +1596,18 @@ function renderActivity(){
 
   // ── Bar chart period (7/14/30 days) ──
   var overviewDays = parseInt((document.getElementById('overview-period-select')||{value:'7'}).value)||7;
-  var today = new Date();
+  // Find the most recent date with data to use as the end of the window
+  var latestDataDate = new Date();
+  activityRows.forEach(function(r){
+    var d = parseDateStr((r['Date']||'').trim());
+    if(!isNaN(d) && d > latestDataDate) latestDataDate = d;
+  });
+  // Use today or latest data date, whichever is more recent
+  var windowEnd = new Date(Math.max(new Date().getTime(), latestDataDate.getTime()));
   var days7 = [];
   for(var i=overviewDays-1;i>=0;i--){
-    var d=new Date(today);
-    d.setDate(today.getDate()-i);
+    var d=new Date(windowEnd);
+    d.setDate(windowEnd.getDate()-i);
     days7.push(d);
   }
 
