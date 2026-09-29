@@ -1924,10 +1924,13 @@ function renderActivity(){
     return dayAvgs.length ? dayAvgs.reduce(function(s,v){return s+v;},0)/dayAvgs.length : 0;
   })();
 
-  // Add day-off indicator (grey bar) for days with rows but zero load
+  // Add day-off indicator (grey bar) for days with zero load (day off or no data)
   var dayOffLoadData = dayChartData.map(function(dd, i){
     var dk = actDateKey(days7[i]);
-    return (daysWithData[dk] && !dd.avgPC) ? 8 : 0;
+    // Show grey bar if: day has rows in sheet (Off entries) but no basketball load
+    // OR day is in window but has no rows at all
+    if(!dd.avgPC) return 6;
+    return 0;
   });
   if(dayOffLoadData.some(function(v){return v>0;})){
     loadDatasets.push({
@@ -1949,6 +1952,8 @@ function renderActivity(){
         legend:{display:false},
         tooltip:{callbacks:{label:function(ctx){return ' '+ctx.dataset.label+': '+ctx.raw.toLocaleString()+' PS';}}}
       },
+      barPercentage: 0.8,
+      categoryPercentage: 0.9,
       scales:{
         x:{stacked:true,ticks:{color:tickC,font:{size:11}},grid:{color:gridC},border:{display:false}},
         y:{stacked:true,ticks:{color:tickC,font:{size:11}},grid:{color:gridC},border:{display:false}}
