@@ -1662,23 +1662,25 @@ function renderActivity(){
       var pc=parseInt(r['PC'])||0;
       var min=parseInt(r['Duration (min)'])||0;
       var t=(r['Training Type']||'').trim();
-      if(!byP[name]){byP[name]={pc:0,min:0,byType:{},didBasketball:false};}
+      var isBasketball=t.toLowerCase().indexOf('basketball')!==-1||t.toLowerCase().indexOf('practice')!==-1||t.toLowerCase().indexOf('skill')!==-1;
+      if(!byP[name]){byP[name]={pc:0,min:0,basketballMin:0,byType:{},didBasketball:false};}
       byP[name].pc  +=pc;
       byP[name].min +=min;
+      if(isBasketball){
+        byP[name].didBasketball=true;
+        byP[name].basketballMin+=min; // only basketball minutes
+      }
       if(t){
         if(!byP[name].byType[t]) byP[name].byType[t]=0;
         byP[name].byType[t]+=pc;
       }
-      if(t.toLowerCase().indexOf('basketball')!==-1||t.toLowerCase().indexOf('practice')!==-1||t.toLowerCase().indexOf('skill')!==-1){
-        byP[name].didBasketball=true;
-      }
     });
-    // Only basketball practice players for avg
+    // Only basketball practice players; minutes = only their basketball practice minutes
     var allNames=Object.keys(byP);
     var pNames=allNames.filter(function(p){return byP[p].didBasketball&&byP[p].pc>0;});
-    var n=pNames.length||allNames.length; // fallback to all if no basketball
+    var n=pNames.length||allNames.length;
     var avgPC  = pNames.length?Math.round(pNames.reduce(function(s,p){return s+byP[p].pc; },0)/pNames.length):0;
-    var avgMin = pNames.length?Math.round(pNames.reduce(function(s,p){return s+byP[p].min;},0)/pNames.length):0;
+    var avgMin = pNames.length?Math.round(pNames.reduce(function(s,p){return s+byP[p].basketballMin;},0)/pNames.length):0;
     // Secondary types with 7+ players
     var typePlayerCount={};
     pNames.forEach(function(p){Object.keys(byP[p].byType).forEach(function(t){typePlayerCount[t]=(typePlayerCount[t]||0)+1;});});
@@ -1784,8 +1786,10 @@ function renderActivity(){
     return dayAvgs.length ? dayAvgs.reduce(function(s,v){return s+v;},0)/dayAvgs.length : 0;
   })();
 
-  // Mark days that have ANY rows (including day-off rows with 0 load)
+  // Mark ALL days in the window as having a column (even if no data)
+  // Also track which days have actual row data
   var daysWithData = {};
+  days7.forEach(function(d){ daysWithData[actDateKey(d)] = true; });
   activityRows.forEach(function(r){
     var dk=normDateStr((r['Date']||'').trim());
     if(dk) daysWithData[dk]=true;
@@ -1795,20 +1799,27 @@ function renderActivity(){
     label:'Avg minutes',
     data: dayChartData.map(function(dd, i){
       var dk = actDateKey(days7[i]);
-      // Day off row exists but has 0 load — show 0 explicitly
-      if(daysWithData[dk] && !dd.avgMin) return 0;
-      return dd.avgMin;
+      if(daysWithData[dk] && !dd.avgMin) return null; // day off — show no bar
+      return dd.avgMin || null;
     }),
-    backgroundColor: dayChartData.map(function(dd){
-      if(!dd.avgMin) return 'rgba(200,200,200,0.4)';
+    backgroundColor: dayChartData.map(function(dd, i){
+      var dk = actDateKey(days7[i]);
+      if(daysWithData[dk] && !dd.avgMin) return 'rgba(160,160,160,0.5)';
+      if(!dd.avgMin) return 'rgba(160,160,160,0.5)';
       return dd.avgMin > chronicMinAvg ? '#e53935' : '#43a047';
     }),
     borderRadius: 4,
-    // Show a tiny base so day-off columns are visible
-    minBarLength: dayChartData.map(function(dd, i){
+    minBarLength: 6
+  },
+  {
+    label:'Day off',
+    data: dayChartData.map(function(dd, i){
       var dk = actDateKey(days7[i]);
-      return (daysWithData[dk] && !dd.avgMin) ? 4 : 0;
-    })
+      return (daysWithData[dk] && !dd.avgMin) ? 6 : null;
+    }),
+    backgroundColor: 'rgba(160,160,160,0.4)',
+    borderRadius: 4,
+    minBarLength: 6
   }];
 
   var showLegend = typesForChart.length > 1;
@@ -1852,8 +1863,10 @@ function renderActivity(){
   var chronicPSAvg  = chronicCalc.ps;
   var chronicMinAvg = chronicCalc.min;
 
-  // Mark days that have ANY rows (including day-off rows with 0 load)
+  // Mark ALL days in the window as having a column (even if no data)
+  // Also track which days have actual row data
   var daysWithData = {};
+  days7.forEach(function(d){ daysWithData[actDateKey(d)] = true; });
   activityRows.forEach(function(r){
     var dk=normDateStr((r['Date']||'').trim());
     if(dk) daysWithData[dk]=true;
@@ -1863,20 +1876,27 @@ function renderActivity(){
     label:'Avg minutes',
     data: dayChartData.map(function(dd, i){
       var dk = actDateKey(days7[i]);
-      // Day off row exists but has 0 load — show 0 explicitly
-      if(daysWithData[dk] && !dd.avgMin) return 0;
-      return dd.avgMin;
+      if(daysWithData[dk] && !dd.avgMin) return null; // day off — show no bar
+      return dd.avgMin || null;
     }),
-    backgroundColor: dayChartData.map(function(dd){
-      if(!dd.avgMin) return 'rgba(200,200,200,0.4)';
+    backgroundColor: dayChartData.map(function(dd, i){
+      var dk = actDateKey(days7[i]);
+      if(daysWithData[dk] && !dd.avgMin) return 'rgba(160,160,160,0.5)';
+      if(!dd.avgMin) return 'rgba(160,160,160,0.5)';
       return dd.avgMin > chronicMinAvg ? '#e53935' : '#43a047';
     }),
     borderRadius: 4,
-    // Show a tiny base so day-off columns are visible
-    minBarLength: dayChartData.map(function(dd, i){
+    minBarLength: 6
+  },
+  {
+    label:'Day off',
+    data: dayChartData.map(function(dd, i){
       var dk = actDateKey(days7[i]);
-      return (daysWithData[dk] && !dd.avgMin) ? 4 : 0;
-    })
+      return (daysWithData[dk] && !dd.avgMin) ? 6 : null;
+    }),
+    backgroundColor: 'rgba(160,160,160,0.4)',
+    borderRadius: 4,
+    minBarLength: 6
   }];
 
   var showLegend = typesForChart.length > 1;
@@ -1907,7 +1927,7 @@ function renderActivity(){
   // Add day-off indicator (grey bar) for days with rows but zero load
   var dayOffLoadData = dayChartData.map(function(dd, i){
     var dk = actDateKey(days7[i]);
-    return (daysWithData[dk] && !dd.avgPC) ? 3 : 0;
+    return (daysWithData[dk] && !dd.avgPC) ? 8 : 0;
   });
   if(dayOffLoadData.some(function(v){return v>0;})){
     loadDatasets.push({
