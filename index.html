@@ -342,8 +342,8 @@
 
 <div class="main">
   <div class="page-tabs">
-    <div class="page-tab active" onclick="showPage('activity')">Player Activity &amp; Practice Load</div>
-    <div class="page-tab" onclick="showPage('wellness')">Team Wellness</div>
+    <div class="page-tab active" onclick="showPage('wellness')">Team Wellness</div>
+    <div class="page-tab" onclick="showPage('activity')">Player Activity &amp; Practice Load</div>
     <div class="page-tab" onclick="showPage('workouts')">Individual Practices</div>
     <div class="page-tab" onclick="showPage('body')">Body Measurements</div>
   </div>
@@ -642,7 +642,7 @@ function showPage(page) {
     target.style.display = 'block';
   }
   document.querySelectorAll('.page-tab').forEach(function(t,i) {
-    var pages = ['activity','wellness','workouts'];
+    var pages = ['wellness','activity','workouts'];
     t.classList.toggle('active', pages[i] === page);
   });
   var hsub = document.getElementById('header-sub');
@@ -2367,6 +2367,10 @@ function populateWellnessPlayerSelect(){
     + Object.keys(players).sort().map(function(n){
         return '<option value="'+n+'">'+n+'</option>';
       }).join('');
+  // Default to Spencer Weisz
+  if(players['Spencer Weisz']) sel.value = 'Spencer Weisz';
+  else if(Object.keys(players).length) sel.value = Object.keys(players).sort()[0];
+  buildWellnessTrend();
 }
 
 function buildWellnessTrend(){
@@ -2759,7 +2763,7 @@ function bmBuildCards() {
 }
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
-showPage('activity');
+showPage('wellness');
 bmBuildCards();
 (function(){ var b=document.querySelector('.bm-btn'); if(b) b.click(); })();
 loadAll();
