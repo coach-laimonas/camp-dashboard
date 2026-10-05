@@ -632,7 +632,7 @@ var moodChartObj = null;
 // ── PAGE TABS ────────────────────────────────────────────────────────────────
 function showPage(page) {
   var labels = {activity:'Player Activity & Practice Load', wellness:'Team Wellness', workouts:'Individual Practices', body:'Body Measurements'};
-  var allPages = ['page-activity','page-workouts','page-wellness'];
+  var allPages = ['page-activity','page-workouts','page-wellness','page-body'];
   allPages.forEach(function(id){
     var el = document.getElementById(id);
     if(el) el.style.display = 'none';
